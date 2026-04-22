@@ -43,8 +43,6 @@ chmod +x ip_blinker.sh
 ## ⚖️ Ethical Use
 Privacy research only. Tor = legal anonymity tool.
 
-## 📸 Add Demo GIF
-Record screen → Upload `demo.gif`
 
 ---
 **Made with ❤️ for CS students**
