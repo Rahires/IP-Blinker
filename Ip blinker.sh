@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # ==========================================================
 # IP BLINKER - Simple Tor IP Changer
 # Author  : Sahebrao Rahire
@@ -19,8 +18,7 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
-# Full license:
-# [gnu.org](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
+# Full license: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 #
 # ---------------------- DISCLAIMER -------------------------
 #
@@ -28,11 +26,11 @@
 #
 # ==========================================================
 
-set -euo pipefail
+set -uo pipefail
 
 TOR_HOST="127.0.0.1"
 TOR_PORT="9050"
-URL="[api.ipify.org](https://api.ipify.org)"
+URL="https://api.ipify.org"
 WAIT_INTERVAL=45
 TOR_RESTART_WAIT=10
 
@@ -72,15 +70,14 @@ install_dependencies() {
   if ! command -v curl >/dev/null 2>&1; then
     packages+=(curl)
   fi
-
   if ! command -v tor >/dev/null 2>&1; then
     packages+=(tor)
   fi
 
   if [[ ${#packages[@]} -gt 0 ]]; then
     log_info "Installing dependencies: ${packages[*]}..."
-    apt update -qq
-    apt install -y "${packages[@]}"
+    apt-get update -qq
+    apt-get install -y "${packages[@]}"
   fi
 }
 
@@ -111,7 +108,13 @@ test_tor_connection() {
 }
 
 get_ip() {
-  curl -s --socks5-hostname "${TOR_HOST}:${TOR_PORT}" --max-time 20 "$URL" 2>/dev/null || echo "UNKNOWN"
+  local ip
+  ip=$(curl -s --socks5-hostname "${TOR_HOST}:${TOR_PORT}" --max-time 20 "$URL" 2>/dev/null) || true
+  if [[ -z "$ip" ]]; then
+    echo "UNKNOWN"
+  else
+    echo "$ip"
+  fi
 }
 
 change_ip() {
