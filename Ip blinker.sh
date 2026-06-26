@@ -13,7 +13,7 @@
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
-# version 2 as published by the Free Software Foundation.[web:77]
+# version 2 as published by the Free Software Foundation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,7 +30,7 @@
 #
 # It is intended for EDUCATIONAL USE ONLY (e.g., lab experiments,
 # privacy study). Using Tor or changing IPs for illegal or
-# unauthorized activities may violate laws and site policies.[web:69][web:72]
+# unauthorized activities may violate laws and site policies.
 #
 # The author is NOT responsible for any misuse, damage, or legal
 # issues caused by this script. Use it only on systems and networks
@@ -41,7 +41,7 @@
 set -euo pipefail
 
 TOR="127.0.0.1:9050"
-URL="https://api.ipify.org"  # simple public IP service[web:104]
+URL="https://api.ipify.org"  # simple public IP service
 
 clear
 echo "=== IP BLINKER ==="
@@ -65,7 +65,7 @@ fi
 echo "[*] Testing Tor..."
 wget -qO- --proxy=on \
   --execute="use_proxy=yes;https_proxy=socks5h://$TOR" \
-  "$URL" >/dev/null 2>&1 || sudo systemctl restart tor[web:80][web:87]
+  "$URL" >/dev/null 2>&1 || sudo systemctl restart tor
 
 echo
 echo "READY! Using Tor via $TOR  |  Press Ctrl+C to stop"
