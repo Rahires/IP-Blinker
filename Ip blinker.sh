@@ -5,165 +5,152 @@
 # Year    : 2026
 # License : GNU GPL v2
 # ==========================================================
-#
-# ---------------------- LICENSE NOTICE ---------------------
-#
-# Copyright (c) 2026 Sahebrao Rahire
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# version 2 as published by the Free Software Foundation.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-#
-# Full license: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
-#
-# ---------------------- DISCLAIMER -------------------------
-#
 # Educational use only.
-#
 # ==========================================================
 
-set -uo pipefail
+# ── Config ─────────────────────────────────────────────────
+TOR_PROXY="127.0.0.1:9050"
+IP_API="https://api.ipify.org"
+CHANGE_INTERVAL=45   # seconds between IP changes
+TOR_BOOT_WAIT=10     # seconds to wait after tor restart
 
-TOR_HOST="127.0.0.1"
-TOR_PORT="9050"
-URL="https://api.ipify.org"
-WAIT_INTERVAL=45
-TOR_RESTART_WAIT=10
+# ── Colors ─────────────────────────────────────────────────
+R='\033[0;31m'  # Red
+G='\033[0;32m'  # Green
+Y='\033[1;33m'  # Yellow
+C='\033[0;36m'  # Cyan
+B='\033[1;34m'  # Blue
+NC='\033[0m'    # Reset
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+# ── Logging ────────────────────────────────────────────────
+info()    { echo -e "${C}[*]${NC} $1"; }
+success() { echo -e "${G}[✓]${NC} $1"; }
+warn()    { echo -e "${Y}[!]${NC} $1"; }
+error()   { echo -e "${R}[✗]${NC} $1"; exit 1; }
 
-print_banner() {
+# ── Banner ─────────────────────────────────────────────────
+banner() {
   clear
-  echo -e "${CYAN}"
-  echo "=========================================="
-  echo "         IP BLINKER - Tor IP Changer     "
-  echo "=========================================="
+  echo -e "${B}"
+  echo "  ╔══════════════════════════════════════╗"
+  echo "  ║       IP BLINKER - Tor IP Changer    ║"
+  echo "  ║         Author: Sahebrao Rahire       ║"
+  echo "  ╚══════════════════════════════════════╝"
   echo -e "${NC}"
-  echo "Educational use only"
-  echo
 }
 
-log_info()    { echo -e "${CYAN}[*]${NC} $1"; }
-log_success() { echo -e "${GREEN}[✓]${NC} $1"; }
-log_warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
-log_error()   { echo -e "${RED}[✗]${NC} $1"; }
-
+# ── Root Check ─────────────────────────────────────────────
 check_root() {
-  if [[ $EUID -ne 0 ]]; then
-    log_error "This script requires root privileges. Run with sudo."
-    exit 1
-  fi
+  [ "$(id -u)" -eq 0 ] || error "Run with sudo: sudo ./ip_blinker.sh"
 }
 
-install_dependencies() {
-  local packages=()
+# ── Install Missing Tools ──────────────────────────────────
+install_deps() {
+  local missing=""
+  command -v curl >/dev/null 2>&1 || missing="$missing curl"
+  command -v tor  >/dev/null 2>&1 || missing="$missing tor"
 
-  if ! command -v curl >/dev/null 2>&1; then
-    packages+=(curl)
-  fi
-  if ! command -v tor >/dev/null 2>&1; then
-    packages+=(tor)
-  fi
+  [ -z "$missing" ] && return
 
-  if [[ ${#packages[@]} -gt 0 ]]; then
-    log_info "Installing dependencies: ${packages[*]}..."
-    apt-get update -qq
-    apt-get install -y "${packages[@]}"
-  fi
+  info "Installing:$missing"
+  apt-get update -qq && apt-get install -y $missing -qq
+  success "Dependencies installed"
 }
 
+# ── Tor Service Control ────────────────────────────────────
 start_tor() {
-  if ! systemctl is-active --quiet tor; then
-    log_info "Starting Tor service..."
-    systemctl enable --now tor
-    sleep 5
-  fi
+  systemctl is-active --quiet tor && return
+  info "Starting Tor..."
+  systemctl enable --now tor >/dev/null 2>&1
+  sleep 5
+  systemctl is-active --quiet tor || error "Tor failed to start"
+  success "Tor is running"
 }
 
-test_tor_connection() {
-  log_info "Testing Tor connection..."
-  local attempts=3
-
-  for ((i=1; i<=attempts; i++)); do
-    if curl -s --socks5-hostname "${TOR_HOST}:${TOR_PORT}" --max-time 15 "$URL" >/dev/null 2>&1; then
-      log_success "Tor connection verified"
+# ── Test Tor Proxy ─────────────────────────────────────────
+test_tor() {
+  info "Verifying Tor connection..."
+  local i=1
+  while [ "$i" -le 3 ]; do
+    if curl -s --socks5-hostname "$TOR_PROXY" --max-time 15 "$IP_API" >/dev/null 2>&1; then
+      success "Tor connection OK"
       return 0
     fi
-    log_warn "Attempt $i/$attempts failed, retrying..."
-    systemctl restart tor
+    warn "Attempt $i/3 failed — retrying..."
+    systemctl restart tor >/dev/null 2>&1
     sleep 5
+    i=$((i + 1))
   done
-
-  log_error "Could not establish Tor connection after $attempts attempts"
-  exit 1
+  error "Cannot connect through Tor after 3 attempts"
 }
 
+# ── Fetch IP via Tor ───────────────────────────────────────
 get_ip() {
-  local ip
-  ip=$(curl -s --socks5-hostname "${TOR_HOST}:${TOR_PORT}" --max-time 20 "$URL" 2>/dev/null) || true
-  if [[ -z "$ip" ]]; then
-    echo "UNKNOWN"
-  else
-    echo "$ip"
-  fi
+  curl -s --socks5-hostname "$TOR_PROXY" --max-time 15 "$IP_API" 2>/dev/null || echo "UNKNOWN"
 }
 
-change_ip() {
-  systemctl restart tor
-  sleep "$TOR_RESTART_WAIT"
+# ── Change Tor Circuit (new IP) ────────────────────────────
+new_circuit() {
+  systemctl restart tor >/dev/null 2>&1
+  sleep "$TOR_BOOT_WAIT"
 }
 
+# ── Divider ────────────────────────────────────────────────
+divider() { echo -e "${B}  ──────────────────────────────────────${NC}"; }
+
+# ── Graceful Exit ──────────────────────────────────────────
 cleanup() {
   echo
-  log_info "Shutting down..."
+  info "Stopped by user. Goodbye!"
   exit 0
 }
 
+# ── Main ───────────────────────────────────────────────────
 main() {
   trap cleanup SIGINT SIGTERM
 
-  print_banner
+  banner
   check_root
-  install_dependencies
+  install_deps
   start_tor
-  test_tor_connection
+  test_tor
 
   echo
-  echo -e "${GREEN}READY!${NC} Using Tor via ${TOR_HOST}:${TOR_PORT}"
-  echo "Press Ctrl+C to stop"
-  echo "=========================================="
+  echo -e "  ${G}READY!${NC} Proxy → ${C}${TOR_PROXY}${NC}"
+  echo -e "  Changing IP every ${Y}${CHANGE_INTERVAL}s${NC} | Press ${R}Ctrl+C${NC} to stop"
+  divider
+
+  local count=0
 
   while true; do
+    count=$((count + 1))
     echo
-    log_info "Fetching current IP..."
+    echo -e "  ${C}Round #${count}${NC}"
+
+    # Get current IP before change
     OLD_IP=$(get_ip)
-    echo -e "    👀 Current IP: ${YELLOW}${OLD_IP}${NC}"
+    echo -e "  👀 Old IP → ${Y}${OLD_IP}${NC}"
 
-    log_info "Requesting new Tor circuit..."
-    change_ip
+    # Request new circuit
+    info "Switching Tor circuit..."
+    new_circuit
 
+    # Get new IP after change
     NEW_IP=$(get_ip)
-    echo -e "    ✨ New IP:     ${YELLOW}${NEW_IP}${NC}"
+    echo -e "  ✨ New IP → ${G}${NEW_IP}${NC}"
 
-    if [[ "$OLD_IP" == "UNKNOWN" || "$NEW_IP" == "UNKNOWN" ]]; then
-      log_warn "Could not fetch IP (Tor may still be initializing)"
-    elif [[ "$OLD_IP" != "$NEW_IP" ]]; then
-      log_success "IP changed successfully!"
+    # Compare old and new IP
+    if [ "$OLD_IP" = "UNKNOWN" ] || [ "$NEW_IP" = "UNKNOWN" ]; then
+      warn "Could not fetch IP — Tor may still be booting"
+    elif [ "$OLD_IP" = "$NEW_IP" ]; then
+      warn "IP unchanged — Tor reused the circuit"
     else
-      log_warn "IP unchanged (may need more time)"
+      success "IP changed successfully!"
     fi
 
-    echo -e "    ⏳ Next change in ${WAIT_INTERVAL}s..."
-    sleep "$WAIT_INTERVAL"
+    divider
+    echo -e "  ⏳ Next change in ${CHANGE_INTERVAL}s..."
+    sleep "$CHANGE_INTERVAL"
   done
 }
 
