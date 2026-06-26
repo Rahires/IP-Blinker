@@ -17,31 +17,21 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
-# Full license text:
+# Full license:
 # https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 #
 # ---------------------- DISCLAIMER -------------------------
 #
-# This script routes traffic through the Tor network and attempts
-# to change the visible IP address by restarting the Tor service.
-#
-# It is intended for EDUCATIONAL USE ONLY (e.g., lab experiments,
-# privacy study). Using Tor or changing IPs for illegal or
-# unauthorized activities may violate laws and site policies.
-#
-# The author is NOT responsible for any misuse, damage, or legal
-# issues caused by this script. Use it only on systems and networks
-# where you have permission, and follow all applicable laws.
+# Educational use only.
 #
 # ==========================================================
 
 set -euo pipefail
 
 TOR="127.0.0.1:9050"
-URL="https://api.ipify.org"  # simple public IP service
+URL="https://api.ipify.org"
 
 clear
 echo "=== IP BLINKER ==="
@@ -55,25 +45,32 @@ if ! command -v wget >/dev/null 2>&1; then
 fi
 
 # Ensure Tor
-if ! systemctl is-active tor >/dev/null 2>&1; then
+if ! systemctl is-active --quiet tor; then
   echo "[*] Installing/starting Tor..."
   sudo apt update && sudo apt install -y tor
-  sudo systemctl start tor
+  sudo systemctl enable --now tor
 fi
 
-# Quick Tor test (through Tor SOCKS)
 echo "[*] Testing Tor..."
-wget -qO- --proxy=on \
-  --execute="use_proxy=yes;https_proxy=socks5h://$TOR" \
-  "$URL" >/dev/null 2>&1 || sudo systemctl restart tor
+
+# FIX: correct SOCKS usage
+wget -qO- \
+  --proxy=on \
+  --execute="https_proxy=socks5h://$TOR" \
+  "$URL" >/dev/null 2>&1 || {
+    echo "[!] Tor not ready, restarting..."
+    sudo systemctl restart tor
+    sleep 5
+}
 
 echo
-echo "READY! Using Tor via $TOR  |  Press Ctrl+C to stop"
+echo "READY! Using Tor via $TOR | Ctrl+C to stop"
 echo "==============================================="
 
 get_ip() {
-  wget -qO- --proxy=on \
-    --execute="use_proxy=yes;https_proxy=socks5h://$TOR" \
+  wget -qO- \
+    --proxy=on \
+    --execute="https_proxy=socks5h://$TOR" \
     "$URL" 2>/dev/null || echo "UNKNOWN"
 }
 
@@ -85,13 +82,20 @@ while true; do
 
   echo "🔄 Restarting Tor..."
   sudo systemctl restart tor
-  sleep 8
+  sleep 10
 
   echo "✨ NEW IP:"
   NEW=$(get_ip)
   echo "$NEW"
 
-  [[ "$OLD" != "$NEW" ]] && echo "✅ CHANGED!" || echo "⚠️ Same IP"
+  if [[ "$OLD" == "UNKNOWN" || "$NEW" == "UNKNOWN" ]]; then
+    echo "⚠️ Could not fetch IP (Tor not ready yet)"
+  elif [[ "$OLD" != "$NEW" ]]; then
+    echo "✅ CHANGED!"
+  else
+    echo "⚠️ Same IP"
+  fi
+
   echo "⏳ Wait 45s..."
   sleep 45
 done
